@@ -1,0 +1,157 @@
+#include "main.h"
+#include "adc.h"
+#include "dma.h"
+#include "i2c.h"
+#include "spi.h"
+#include "tim.h"
+#include "usart.h"
+#include "gpio.h"
+#include "lcd.h"
+#include "vector"
+//#include "camera.h"
+static uint16_t compare=375;
+uint16_t flag=0;
+uint16_t queue[2]
+uint16_t in_time1=0,in_time2=0;
+void Error_Handler(void) {}
+void lag(int time){
+	uint16_t timer=HAL_GetTick();
+	while(HAL_GetTick()-timer>time)
+		return;
+}
+void SystemClock_Config(void){
+	  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+	  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+	  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
+
+	  /** Initializes the CPU, AHB and APB busses clocks
+	  */
+	  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+	  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+	  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
+	  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+	  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+	  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+	  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
+	  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+	  {
+	    Error_Handler();
+	  }
+	  /** Initializes the CPU, AHB and APB busses clocks
+	  */
+	  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+	                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+	  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+	  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+	  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+	  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+	  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+	  {
+	    Error_Handler();
+	  }
+	  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
+	  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV8;
+	  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+	  {
+	    Error_Handler();
+	  }
+	}
+void beep(int time){
+	uint16_t beep_clock=HAL_GetTick();
+	while(HAL_GetTick()-beep_clock<time)
+		HAL_GPIO_WritePin(BUZZER_GPIO_Port,BUZZER_Pin,GPIO_PIN_SET);
+	HAL_GPIO_WritePin(BUZZER_GPIO_Port,BUZZER_Pin,GPIO_PIN_RESET);
+
+}
+void set_up(void){
+	 HAL_Init();
+	  SystemClock_Config();
+	  MX_GPIO_Init();     //Initialize most GPIOs on board
+	  MX_DMA_Init();      //Initialize DMA
+
+	  HAL_GPIO_InitPin(BUTTON1_GPIO_Port,BUTTON1_Pin, GPIO_MODE_INPUT,GPIO_PULLUP);
+	  HAL_GPIO_InitPin(BUTTON2_GPIO_Port,BUTTON2_Pin, GPIO_MODE_INPUT,GPIO_PULLUP);
+	  HAL_GPIO_InitPin(BUTTON3_GPIO_Port,BUTTON3_Pin, GPIO_MODE_INPUT,GPIO_PULLUP);
+	  HAL_GPIO_InitPin(LED1_GPIO_Port, LED1_Pin, GPIO_MODE_OUTPUT_PP,GPIO_NOPULL);
+	  HAL_GPIO_InitPin(LED2_GPIO_Port, LED2_Pin, GPIO_MODE_OUTPUT_PP,GPIO_NOPULL);
+	  HAL_GPIO_InitPin(LED3_GPIO_Port, LED3_Pin, GPIO_MODE_OUTPUT_PP,GPIO_NOPULL);
+	  HAL_GPIO_InitPin(BUZZER_GPIO_Port, BUZZER_Pin, GPIO_MODE_OUTPUT_PP,GPIO_NOPULL);
+	  TIM1_PWM_Init();
+	  TIM5_PWM_Init();
+	  HAL_TIM_ConfigTimer(SERVO_TIM, 287, 49);
+	  HAL_TIM_PWM_Start(SERVO_TIM, TIM_CHANNEL_1);
+	  HAL_TIM_PWM_Start(SERVO_TIM, TIM_CHANNEL_2);
+	  HAL_TIM_PWM_Start(SERVO_TIM, TIM_CHANNEL_3);
+}
+bool check_button(uint16_t button){
+	switch(button){
+		case 1:
+			return !HAL_GPIO_ReadPin(BUTTON1_GPIO_Port,BUTTON1_Pin);
+		case 2:
+			return !HAL_GPIO_ReadPin(BUTTON2_GPIO_Port,BUTTON2_Pin);
+		case 3:
+			return !HAL_GPIO_ReadPin(BUTTON3_GPIO_Port,BUTTON3_Pin);
+	}
+}
+bool bounce(uint16_t button){
+
+
+	switch(button){
+		case 1:
+			while(check_button(1)){}
+			break;
+		case 2:
+			while(check_button(2)){}
+			break;
+		case 3:
+			while(check_button(3)){}
+			break;
+	}
+	return 1;
+}
+void up(){
+	if(compare>=525)
+		flag=1;
+	if(HAL_GetTick()-in_time1>=50){
+		HAL_TIM_PWM_SetCompare(SERVO_TIM, TIM_CHANNEL_1, compare+15);
+		leftmost+=15;
+		in_time1=HAL_GetTick();
+	}
+}
+void down(){
+	if(compare<=225){
+		flag=2;
+
+	if(HAL_GetTick()-in_time2>=50){
+		HAL_TIM_PWM_SetCompare(SERVO_TIM, TIM_CHANNEL_1, compare-15);
+		compare-=15;
+		in_time2=HAL_GetTick();
+	}
+}
+
+void light_attack(){
+	if(flag==1)
+		up();
+	else if(flag==2)
+		down();
+}
+void record(uint16_t queue){
+	if()
+
+}
+
+int main(){
+	set_up();
+
+	uint16_t time=HAL_GetTick();
+	while(1){
+		if(check_button(1))
+			light_attack();
+		
+
+	}
+	return 0;
+}
+
+
